@@ -1,1 +1,1 @@
-"""Chat assistant for the API (Gemini). Dashboard UI lives in frontend/."""
+"""Chat assistant for the API (Groq). Dashboard UI lives in frontend/."""

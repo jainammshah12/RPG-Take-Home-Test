@@ -1,14 +1,13 @@
-"""Gemini-powered dashboard assistant."""
+"""Groq-powered dashboard assistant."""
 
 from __future__ import annotations
 
 import os
 import time
 
-from google import genai
-from google.genai import types
+from groq import Groq, RateLimitError
 
-_MODEL = "gemini-2.0-flash"
+_MODEL = "llama-3.3-70b-versatile"
 
 _SYSTEM_TEMPLATE = """You are LedgerLens Assistant - a friendly financial analyst chatbot embedded in a small-business dashboard.
 
@@ -26,7 +25,7 @@ DASHBOARD CONTEXT:
 
 
 def build_dashboard_context(result) -> str:
-    """Serialize pipeline results into a compact context block for Gemini."""
+    """Serialize pipeline results into a compact context block for the LLM."""
     lines: list[str] = []
     a = result.analytics
     if not a:
@@ -107,69 +106,73 @@ def build_dashboard_context(result) -> str:
     return "\n".join(lines)
 
 
+def _missing_key_message() -> str:
+    return (
+        "I need a **GROQ_API_KEY** in your `.env` file to answer questions. "
+        "Get one at https://console.groq.com/keys"
+    )
+
+
+def _rate_limited_message() -> str:
+    return (
+        "I'm temporarily rate-limited by the Groq API. "
+        "Please wait a minute and try again, or check your quota at "
+        "https://console.groq.com"
+    )
+
+
+def _build_messages(user_message: str, context: str, history: list[dict]) -> list[dict]:
+    system = _SYSTEM_TEMPLATE.format(context=context)
+    messages: list[dict] = [{"role": "system", "content": system}]
+    for msg in history[-10:]:
+        role = msg.get("role", "user")
+        if role not in ("user", "assistant"):
+            continue
+        text = msg.get("content", "")
+        if text:
+            messages.append({"role": role, "content": text})
+    messages.append({"role": "user", "content": user_message})
+    return messages
+
+
 def generate_reply(
     user_message: str,
     context: str,
     history: list[dict],
 ) -> str:
-    api_key = os.environ.get("GEMINI_API_KEY")
+    api_key = os.environ.get("GROQ_API_KEY")
     if not api_key:
-        return (
-            "I need a **GEMINI_API_KEY** in your `.env` file to answer questions. "
-            "Get one at https://aistudio.google.com/app/apikey"
-        )
+        return _missing_key_message()
 
-    client = genai.Client(api_key=api_key)
-    system = _SYSTEM_TEMPLATE.format(context=context)
-
-    contents: list[str] = [system]
-    for msg in history[-10:]:
-        role = msg.get("role", "user")
-        text = msg.get("content", "")
-        if not text:
-            continue
-        prefix = "User: " if role == "user" else "Assistant: "
-        contents.append(prefix + text)
-    contents.append("User: " + user_message)
-    contents.append("Assistant:")
-
-    payload = "\n\n".join(contents)
+    client = Groq(api_key=api_key)
+    messages = _build_messages(user_message, context, history)
 
     try:
-        response = client.models.generate_content(
+        response = client.chat.completions.create(
             model=_MODEL,
-            contents=payload,
-            config=types.GenerateContentConfig(
-                temperature=0.3,
-                max_output_tokens=1024,
-            ),
+            messages=messages,
+            temperature=0.3,
+            max_tokens=1024,
         )
-        reply = (response.text or "").strip()
+        reply = (response.choices[0].message.content or "").strip()
         return reply or "I could not generate a response. Please try rephrasing your question."
+    except RateLimitError:
+        time.sleep(2)
+        try:
+            response = client.chat.completions.create(
+                model=_MODEL,
+                messages=messages,
+                temperature=0.3,
+                max_tokens=1024,
+            )
+            reply = (response.choices[0].message.content or "").strip()
+            return reply or "I'm temporarily rate-limited. Please wait a minute and try again."
+        except Exception:
+            return _rate_limited_message()
     except Exception as exc:
         err = str(exc).lower()
-        if "429" in err or "quota" in err or "resource_exhausted" in err:
-            time.sleep(2)
-            try:
-                response = client.models.generate_content(
-                    model=_MODEL,
-                    contents=payload,
-                    config=types.GenerateContentConfig(temperature=0.3, max_output_tokens=1024),
-                )
-                return (response.text or "").strip() or (
-                    "I'm temporarily rate-limited. Please wait a minute and try again."
-                )
-            except Exception:
-                return (
-                    "I'm temporarily rate-limited by the Gemini API. "
-                    "Please wait a minute and try again, or check your quota at "
-                    "https://aistudio.google.com/app/apikey"
-                )
+        if "429" in err or "quota" in err or "rate" in err:
+            return _rate_limited_message()
         if "api" in err and "key" in err:
-            return (
-                "I need a **GEMINI_API_KEY** in your `.env` file. "
-                "Get one at https://aistudio.google.com/app/apikey"
-            )
-        return (
-            "I couldn't generate a reply right now. Please try again in a moment."
-        )
+            return _missing_key_message()
+        return "I couldn't generate a reply right now. Please try again in a moment."

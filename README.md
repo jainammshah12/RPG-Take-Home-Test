@@ -39,7 +39,7 @@ backend/
   ├── analytics/  # Dashboards/Visualizations
   ├── enrichment/ # Categorization Logic
   ├── output/     
-  └── chat/         # Chat assistant (Gemini)
+  └── chat/         # Chat assistant (Groq)
   tests/
 frontend/        # React + Vite UI
 shoebox/         # Your documents (repo root — not inside backend/)
@@ -61,7 +61,7 @@ pip install -r requirements.txt
 Create a `.env` file in the project root:
 
 ```env
-GEMINI_API_KEY=your_gemini_api_key_here
+GROQ_API_KEY=your_groq_api_key_here
 MINDEE_API_KEY=your_mindee_api_key_here
 MINDEE_MODEL_ID=your_model_id_here
 ```
@@ -195,7 +195,7 @@ shoebox/
 | Backend | Python, FastAPI, pandas, pdfplumber, openpyxl |
 | Frontend | React, TypeScript, Vite, Recharts |
 | OCR | Mindee |
-| Chat | Google Gemini |
+| Chat | Groq (Llama 3.3) |
 | Testing | pytest, jest |
  
 ---

@@ -59,10 +59,10 @@ export function formatChatError(err: unknown): string {
   const raw = err instanceof Error ? err.message : String(err);
   const lower = raw.toLowerCase();
   if (lower.includes("429") || lower.includes("quota") || lower.includes("resource_exhausted")) {
-    return "I'm temporarily rate-limited by the Gemini API. Please wait a minute and try again, or check your API quota at [Google AI Studio](https://aistudio.google.com/app/apikey).";
+    return "I'm temporarily rate-limited by the Groq API. Please wait a minute and try again, or check your quota at [Groq Console](https://console.groq.com).";
   }
-  if (lower.includes("api_key") || lower.includes("gemini_api_key")) {
-    return "Chat needs a **GEMINI_API_KEY** in your `.env` file. Get one at https://aistudio.google.com/app/apikey";
+  if (lower.includes("api_key") || lower.includes("groq_api_key")) {
+    return "Chat needs a **GROQ_API_KEY** in your `.env` file. Get one at https://console.groq.com/keys";
   }
   if (lower.includes("fetch") || lower.includes("network") || lower.includes("failed to fetch")) {
     return "Couldn't reach the server. Make sure the backend is running on port 8000.";
