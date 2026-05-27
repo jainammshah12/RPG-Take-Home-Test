@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import os
 import time
 
-from groq import Groq, RateLimitError
+from groq import RateLimitError
 
-_MODEL = "llama-3.3-70b-versatile"
+from src.llm.groq_client import CHAT_MODEL, get_groq_client
 
 _SYSTEM_TEMPLATE = """You are LedgerLens Assistant - a friendly financial analyst chatbot embedded in a small-business dashboard.
 
@@ -140,16 +139,14 @@ def generate_reply(
     context: str,
     history: list[dict],
 ) -> str:
-    api_key = os.environ.get("GROQ_API_KEY")
-    if not api_key:
+    client = get_groq_client()
+    if client is None:
         return _missing_key_message()
-
-    client = Groq(api_key=api_key)
     messages = _build_messages(user_message, context, history)
 
     try:
         response = client.chat.completions.create(
-            model=_MODEL,
+            model=CHAT_MODEL,
             messages=messages,
             temperature=0.3,
             max_tokens=1024,
@@ -160,7 +157,7 @@ def generate_reply(
         time.sleep(2)
         try:
             response = client.chat.completions.create(
-                model=_MODEL,
+                model=CHAT_MODEL,
                 messages=messages,
                 temperature=0.3,
                 max_tokens=1024,

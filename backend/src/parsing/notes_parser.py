@@ -3,6 +3,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from src.parsing.note_status import apply_note_statuses
+
 # Structured line: date | merchant | amount | category
 _PIPE = re.compile(
     r"(\d{4}-\d{2}-\d{2})\s*\|\s*(.+?)\s*\|\s*\$?([\d,]+\.?\d*)\s*(?:\|\s*(.+))?$"
@@ -32,6 +34,11 @@ def parse_notes(notes_path: Path) -> pd.DataFrame:
     rows.extend(_parse_tagged_lines(text, notes_path.name))
     rows.extend(_parse_structured_lines(text, notes_path.name))
     rows.extend(_parse_inline_mentions(text, notes_path.name))
+
+    apply_note_statuses(rows)
+
+    for r in rows:
+        r.pop("note_text", None)
 
     if not rows:
         return pd.DataFrame(
@@ -84,7 +91,6 @@ def _parse_tagged_lines(text: str, source_file: str) -> list[dict]:
         tag = tag_match.group(1).lower()
         body = tag_match.group(2).strip()
         merchant = _merchant_from_text(body)
-        status_raw = _status_from_tag(tag, body)
         amount = _amount_from_text(body)
         note_type = "todo" if tag == "todo" else "done"
 
@@ -94,9 +100,10 @@ def _parse_tagged_lines(text: str, source_file: str) -> list[dict]:
                 merchant=merchant,
                 amount=amount,
                 category_hint="",
-                status_raw=status_raw,
+                status_raw="Unknown",
                 source_file=source_file,
                 note_type=note_type,
+                note_text=stripped,
             )
         )
     return rows
@@ -127,6 +134,7 @@ def _parse_structured_lines(text: str, source_file: str) -> list[dict]:
                     "Unknown",
                     source_file,
                     "expense",
+                    note_text=line,
                 )
             )
             continue
@@ -142,6 +150,7 @@ def _parse_structured_lines(text: str, source_file: str) -> list[dict]:
                     "Unknown",
                     source_file,
                     "expense",
+                    note_text=line,
                 )
             )
     return rows
@@ -168,17 +177,25 @@ def _parse_inline_mentions(text: str, source_file: str) -> list[dict]:
         if not amounts:
             continue
 
-        low = stripped.lower()
         merchant = _merchant_from_text(stripped)
         amt = float(amounts[0].replace(",", ""))
-        status_raw = "Refunded" if "refund" in low else "Unknown"
+        low = stripped.lower()
         if "refund" in low:
             amt = abs(amt)
         else:
             amt = -abs(amt)
 
         rows.append(
-            _note_row("", merchant, amt, "", status_raw, source_file, "expense")
+            _note_row(
+                "",
+                merchant,
+                amt,
+                "",
+                "Unknown",
+                source_file,
+                "expense",
+                note_text=stripped,
+            )
         )
     return rows
 
@@ -189,19 +206,6 @@ def _merchant_from_text(text: str) -> str:
         if re.search(pattern, low):
             return label
     return "Note mention"
-
-
-def _status_from_tag(tag: str, body: str) -> str:
-    low = body.lower()
-    if tag == "todo":
-        return "Pending"
-    if "refund" in low:
-        return "Refunded"
-    if "paid" in low or "sent and paid" in low:
-        return "Paid"
-    if "outstanding" in low or "hasn't paid" in low or "unpaid" in low:
-        return "Pending"
-    return "Paid"
 
 
 def _amount_from_text(text: str) -> float | None:
@@ -225,6 +229,8 @@ def _note_row(
     status_raw: str,
     source_file: str,
     note_type: str,
+    *,
+    note_text: str = "",
 ) -> dict:
     return {
         "source": "note",
@@ -235,4 +241,5 @@ def _note_row(
         "status_raw": status_raw,
         "source_file": source_file,
         "note_type": note_type,
+        "note_text": note_text,
     }

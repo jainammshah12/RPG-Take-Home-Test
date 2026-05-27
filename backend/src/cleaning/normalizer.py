@@ -63,8 +63,12 @@ def _dedupe_key(row: pd.Series) -> str:
     else:
         d = pd.Timestamp(date).strftime("%Y-%m-%d")
     amt = f"{amount:.2f}" if amount is not None and not pd.isna(amount) else "0"
-    src = str(row.get("source", ""))
-    return f"{src}|{d}|{merchant.lower()}|{amt}"
+    src = str(row.get("source", "")).lower()
+    inv = row.get("invoice_id")
+    inv_part = ""
+    if src == "invoice" and inv is not None and not pd.isna(inv) and str(inv).strip():
+        inv_part = f"|{str(inv).strip()}"
+    return f"{src}|{d}|{str(merchant).lower()}|{amt}{inv_part}"
 
 
 def normalize_transactions(df: pd.DataFrame) -> pd.DataFrame:

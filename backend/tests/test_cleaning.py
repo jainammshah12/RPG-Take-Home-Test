@@ -63,3 +63,32 @@ def test_combine_sources_normalizes_invoice_status():
     combined = combine_sources(parsed)
     assert set(combined["status"].unique()) == {"Paid", "Pending"}
     assert combined["merchant_group"].nunique() == 1
+
+
+def test_combine_sources_dedupes_duplicate_invoices():
+    parsed = {
+        "invoices": pd.DataFrame(
+            [
+                {
+                    "source": "invoice",
+                    "source_file": "invoices.xlsx",
+                    "invoice_id": "INV-100",
+                    "date_raw": "2025-01-15",
+                    "merchant_raw": "Client A",
+                    "amount": 500.0,
+                    "status_raw": "paid",
+                },
+                {
+                    "source": "invoice",
+                    "source_file": "invoices.xlsx",
+                    "invoice_id": "INV-100",
+                    "date_raw": "2025-01-15",
+                    "merchant_raw": "Client A",
+                    "amount": 500.0,
+                    "status_raw": "paid",
+                },
+            ]
+        )
+    }
+    combined = combine_sources(parsed)
+    assert len(combined) == 1
