@@ -20,7 +20,7 @@ from src.cache.analysis_store import (
 from src.config import REPO_ROOT, SHOEBOX_DIR
 from src.ingestion.uploads import append_notes, save_invoices, save_receipts, save_statement
 from src.output.export import build_pdf_report
-from src.ui.chat_assistant import generate_reply
+from src.chat.chat_assistant import generate_reply
 
 app = FastAPI(title="LedgerLens API", version="1.0.0")
 

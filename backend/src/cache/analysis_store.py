@@ -27,7 +27,7 @@ from src.parsing.notes_parser import parse_all_notes
 from src.parsing.receipt_ocr import parse_receipts
 from src.parsing.statement_parser import parse_statements
 from src.pipeline import PipelineResult
-from src.ui.chat_assistant import build_dashboard_context
+from src.chat.chat_assistant import build_dashboard_context
 from src.validation.validator import validate
 
 _PARSED_KEYS = ("receipts", "statement", "invoices", "notes")

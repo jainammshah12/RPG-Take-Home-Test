@@ -1,22 +1,10 @@
 # LedgerLens
 ### Turning a Financial Shoebox into Usable Insights
- 
+
 LedgerLens is a financial intelligence pipeline and dashboard for messy freelancer records — transforming a chaotic folder of documents into a clear, actionable overview.
- 
----
- 
-## What It Does
- 
-**Input:** A "shoebox" of mixed financial records:
-- Credit card statements (`.pdf`)
-- Client invoices (`.xlsx`)
-- Receipt images (`.jpg`, `.png`)
-- Free-form notes (`.txt`, `.md`)
-
-**Pipeline:** `INGEST → PARSE → CLEAN → VALIDATE → ANALYTICS → OUTPUT`
 
 ---
- 
+
 ## Core Features
  
 **Financial Overview**:  revenue, expenses, net cash flow, invoice status, merchant trends, and credit card breakdowns.
@@ -25,56 +13,169 @@ LedgerLens is a financial intelligence pipeline and dashboard for messy freelanc
  
 **Confidence-Aware Processing**: structured files are parsed deterministically; uncertain fields are surfaced rather than guessed.
  
-**Interactive Dashboard** (Streamlit):
+**React dashboard** (Vite + FastAPI):
 - KPI summaries and cash-flow charts
 - Merchant and client analytics
 - Receipt gallery with extracted metadata
 - Unified transaction table with source tracking
 - Validation alerts and PDF export
 
-**Ask LedgerLens** — a scoped conversational assistant for querying your own data. Examples:
+**Ask LedgerLens** — a simple scoped conversational assistant for querying your own data. Examples:
 - *"What were my largest expenses in February?"*
 - *"Which client generated the most revenue?"*
 ---
- 
+
 ## Project Structure
- 
+
 ```
-src/
-├── ingestion/
-├── parsing/
-├── cleaning/
-├── validation/
-├── analytics/
-└── output/
+backend/
+  src/            # Pipeline + FastAPI (src.api.main)
+  ├── api/        # REST API endpoints
+  ├── cache/      # Database
+  ├── ingestion/  # Obtain/Add Files 
+  ├── parsing/    # Extract Information/Keywords
+  ├── cleaning/   # Normalize Dates, Currency and Names
+  ├── validation/ # Validate that Information is Cleaned
+  ├── analytics/  # Dashboards/Visualizations
+  ├── enrichment/ # Categorization Logic
+  ├── output/     
+  └── chat/         # Chat assistant (Gemini)
+  tests/
+frontend/        # React + Vite UI
+shoebox/         # Your documents (repo root — not inside backend/)
 ```
- 
-Each stage is independently testable and designed for production-style modularity.
- 
+
 ---
- 
+
 ## Setup
- 
+
 ```bash
-# 1. Create and activate a virtual environment
+# 1. Python environment
 python -m venv .venv
-source .venv/bin/activate        # macOS/Linux
-.venv\Scripts\activate           # Windows
- 
-# 2. Install dependencies
+.venv\Scripts\activate          # Windows
+# source .venv/bin/activate     # macOS/Linux
+
 pip install -r requirements.txt
 ```
- 
+
 Create a `.env` file in the project root:
- 
+
 ```env
 GEMINI_API_KEY=your_gemini_api_key_here
 MINDEE_API_KEY=your_mindee_api_key_here
 MINDEE_MODEL_ID=your_model_id_here
 ```
- 
-Add your documents to `shoebox/`:
- 
+
+Add documents to `shoebox/` (see sample layout below).
+
+### Run the app (React + API)
+
+**Current terminal:**
+```bash
+cd backend
+uvicorn src.api.main:app --reload --port 8000
+```
+
+**Terminal 2 — Frontend:**
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open **http://localhost:5173**
+
+The Vite dev server proxies `/api` to the backend on port 8000.
+
+## Data Flow
+
+**Pipeline:** `INGEST → PARSE → ENRICH → CLEAN → VALIDATE → ANALYTICS → OUTPUT`
+
+- The **React frontend** communicates with the **FastAPI backend** through `/api` (proxied to port `8000` during development).
+
+- Expected Inputs include Credit card statements (`.pdf`), Client invoices (`.xlsx`), Receipt images (`.jpg`, `.png`), Free-form notes (`.txt`, `.md`)
+
+- Uploaded files are sent as `multipart/form-data` and stored in the `shoebox/` folder.
+
+- Each upload clears the in-memory session so the next analysis run picks up newly added files.
+
+- On load or refresh, the frontend calls:
+
+  ```http
+  GET /api/analysis
+  ```
+
+- The backend optimizes processing through **session + disk caching**:
+  - Checks an **in-memory session** first
+  - Falls back to a **disk cache** keyed by shoebox path
+  - Tracks file changes using a manifest of timestamps and file sizes
+  - Reuses cached parsed results when nothing changes
+  - Parses only **new or modified files incrementally**
+  - Performs a full analysis only on first load or force refresh
+
+- Parsed receipts, statements, invoices, and notes are then passed through the financial pipeline:
+
+  ```text
+  combine_sources → assign_categories → validate → compute_analytics
+  ```
+
+- The backend returns a structured JSON payload containing:
+  - Transactions
+  - Analytics and KPIs
+  - Validation flags
+  - Receipt metadata
+
+- React stores this data in state and renders it across the application:
+  - KPI cards and charts
+  - Unified transaction table
+  - Receipt gallery
+  - Validation alerts
+
+- Receipt images are served directly through:
+
+  ```http
+  GET /api/receipts/{filename}
+  ```
+
+- The chat assistant communicates with:
+
+  ```http
+  POST /api/chat
+  ```
+
+- Chat responses stay grounded in the **current dashboard analysis** by using a cached dashboard context rather than querying raw documents again.
+
+### Tests
+
+```bash
+# Backend (from repo root)
+pytest
+
+# Frontend
+cd frontend
+npm test
+```
+
+---
+
+## API Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/analysis` | Load or incrementally update analysis |
+| POST | `/api/analysis/refresh` | Force full re-parse |
+| POST | `/api/chat` | Ask LedgerLens assistant |
+| POST | `/api/upload/receipts` | Upload receipt images |
+| POST | `/api/upload/statement` | Upload statement PDF |
+| POST | `/api/upload/invoices` | Upload invoice workbook |
+| POST | `/api/upload/notes` | Append notes |
+| GET | `/api/receipts/{filename}` | Receipt image |
+| POST | `/api/export/pdf` | Download PDF report |
+
+---
+
+## Shoebox layout
+
 ```
 shoebox/
 ├── receipts/
@@ -84,30 +185,24 @@ shoebox/
 ├── invoices.xlsx
 └── notes.txt
 ```
- 
-```bash
-# 3. Launch
-streamlit run app.py
- 
-# 4. Run tests
-pytest tests/
-```
- 
+
 ---
- 
+
 ## Tech Stack
- 
+
 | Layer | Tools |
-|---|---|
-| Backend | Python, pandas, pdfplumber, openpyxl |
-| OCR & AI | Mindee, Gemini API |
-| Frontend | Streamlit |
-| Testing | pytest |
+|-------|--------|
+| Backend | Python, FastAPI, pandas, pdfplumber, openpyxl |
+| Frontend | React, TypeScript, Vite, Recharts |
+| OCR | Mindee |
+| Chat | Google Gemini |
+| Testing | pytest, jest |
  
 ---
  
-## If I Had More Time
- 
-- **Smarter categorization**: accounting-style expense labels (Software, Travel, Meals, etc.) with model-assisted classification for ambiguous cases
-- **Better explainability**: data quality scores, confidence fields, manual review queues
-- **Productization**: persistent storage, multi-client workspaces, scheduled re-analysis, and a full financial copilot for bookkeeping exports
+## If I Had More Time and GenAI Credits
+
+- **Improved Extraction with LLMs**: Currently, the Mindee API, pdfplumber, pandas and Regex are doing well to parse the information. However, there are a lot of edge cases (especially for notes.txt) where a LLM can eliminate the ambiguity and give the right kind of answers for the existing data.
+- **Improved Chat Feature with RAG**: With extra credits, I would improve the responses in the chat feature using RAG (Retrieval Augmented Generation) to respond with higher accuracy and precision to any possible query asked.
+- **Persistent Database and Deployment**: With more time, I would expand scope to a lot of users where I can add an SQL persistent database instead of simple caching to process data and also deploy on Docker and Kubernetes to test how API endpoints and features work for a huge number of users.
+- **Explainability Scores for the Data**: With additional time, I could add metrics such as data quality scores, confidence fields and manual review queues.
