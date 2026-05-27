@@ -42,7 +42,7 @@ backend/
   └── chat/         # Chat assistant (Groq)
   tests/
 frontend/        # React + Vite UI
-shoebox/         # Your documents (repo root — not inside backend/)
+shoebox/         # Documents (repo root — not inside backend/)
 ```
 
 ---
@@ -65,8 +65,6 @@ GROQ_API_KEY=your_groq_api_key_here
 MINDEE_API_KEY=your_mindee_api_key_here
 MINDEE_MODEL_ID=your_model_id_here
 ```
-
-Add documents to `shoebox/` (see sample layout below).
 
 ### Run the app (React + API)
 
