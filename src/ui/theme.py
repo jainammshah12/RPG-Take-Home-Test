@@ -138,6 +138,64 @@ html, body, [class*="css"] {
     background: #f8fafc;
     border-right: 1px solid #e2e8f0;
 }
+
+/* Fixed bottom-right chat dock */
+div.st-key-chat_fab {
+    position: fixed !important;
+    bottom: 1.25rem !important;
+    right: 1.25rem !important;
+    z-index: 10001 !important;
+    width: auto !important;
+    min-width: 3.25rem !important;
+}
+
+div.st-key-chat_fab button {
+    background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%) !important;
+    color: #fff !important;
+    border: none !important;
+    border-radius: 999px !important;
+    font-weight: 600 !important;
+    padding: 0.7rem 1.15rem !important;
+    box-shadow: 0 4px 24px rgba(37, 99, 235, 0.5) !important;
+    white-space: nowrap !important;
+}
+
+div.st-key-chat_fab button:hover {
+    box-shadow: 0 8px 32px rgba(37, 99, 235, 0.6) !important;
+}
+
+div.st-key-chat_panel {
+    position: fixed !important;
+    bottom: 5.5rem !important;
+    right: 1.25rem !important;
+    z-index: 10000 !important;
+    width: 22rem !important;
+    max-width: calc(100vw - 2.5rem) !important;
+    max-height: min(70vh, 520px) !important;
+    overflow-y: auto !important;
+    background: #ffffff !important;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 16px !important;
+    padding: 1rem 1.1rem 0.75rem !important;
+    box-shadow: 0 16px 48px rgba(15, 23, 42, 0.2) !important;
+}
+
+@media (max-width: 768px) {
+    div.st-key-chat_panel {
+        width: calc(100vw - 2.5rem) !important;
+        right: 1.25rem !important;
+        left: 1.25rem !important;
+        width: auto !important;
+    }
+}
+</style>
+"""
+
+CHAT_CSS = """
+<style>
+section.main .block-container {
+    padding-bottom: 6rem;
+}
 </style>
 """
 

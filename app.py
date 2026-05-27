@@ -10,13 +10,17 @@ import streamlit as st
 
 from src.config import SHOEBOX_DIR
 from src.ingestion.uploads import append_notes, save_invoices, save_receipts, save_statement
+from src.output.export import build_pdf_report
 from src.pipeline import run_pipeline
 from src.ui.charts import (
+    by_source_chart,
+    card_spend_bar,
     cash_flow_bar,
-    category_donut,
-    payment_methods_chart,
+    invoice_status_chart,
+    revenue_clients_bar,
     top_merchants_bar,
 )
+from src.ui.chat_widget import render_floating_chat
 from src.ui.theme import CUSTOM_CSS, alert_html
 
 st.set_page_config(
@@ -31,7 +35,7 @@ st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
 @st.cache_data(show_spinner=False, ttl=300)
 def load_data(shoebox: str):
-    return run_pipeline(Path(shoebox), generate_report=True)
+    return run_pipeline(Path(shoebox), generate_report=False)
 
 
 def _fmt_money(val: float) -> str:
@@ -118,15 +122,16 @@ def _render_kpis(analytics, tx_count: int):
         help="Revenue minus expenses",
     )
     k4.metric(
-        "Receipt spend",
-        f"${analytics.receipt_total_spend:,.2f}",
-        help=f"{analytics.receipt_count} receipt(s) extracted via Gemini",
+        "Card transactions",
+        analytics.statement_tx_count,
+        help="Line items from statement PDF(s)",
     )
 
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Transactions", tx_count)
-    c2.metric("Receipts scanned", analytics.receipt_count)
-    c3.metric("Open alerts", len(analytics.flags))
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Invoices paid", f"${analytics.invoice_paid_amount:,.0f}", help="Collected revenue")
+    c2.metric("Invoices pending", f"${analytics.invoice_pending_amount:,.0f}", help="Outstanding")
+    c3.metric("Receipt spend", f"${analytics.receipt_total_spend:,.2f}", help=f"{analytics.receipt_count} receipt(s)")
+    c4.metric("Alerts", len(analytics.flags))
 
 
 def _render_receipt_gallery(receipts: pd.DataFrame, shoebox: Path):
@@ -146,7 +151,6 @@ def _render_receipt_gallery(receipts: pd.DataFrame, shoebox: Path):
             amt = row.get("amount")
             curr = row.get("currency") or "CAD"
             amt_s = f"${float(amt):,.2f}" if amt is not None and pd.notna(amt) else "—"
-            pay = row.get("payment_method") or "—"
             date = row.get("date_raw") or "—"
             conf = row.get("confidence") or ""
             is_error = str(row.get("ocr_mode", "")).lower() == "error"
@@ -163,7 +167,7 @@ def _render_receipt_gallery(receipts: pd.DataFrame, shoebox: Path):
                 f"""
                 <div class="receipt-card">
                     <div class="merchant">{merchant}{badge}</div>
-                    <div class="meta">{date} · {amt_s} {curr} · {pay}</div>
+                    <div class="meta">{date} · {amt_s} {curr}</div>
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -190,7 +194,6 @@ def _transactions_table(transactions: pd.DataFrame) -> pd.DataFrame:
         "merchant",
         "amount",
         "currency",
-        "category",
         "source",
     ]
     available = [c for c in cols if c in transactions.columns]
@@ -204,6 +207,40 @@ def _transactions_table(transactions: pd.DataFrame) -> pd.DataFrame:
             lambda a: f"${float(a):,.2f}" if a is not None and pd.notna(a) else ""
         )
     return df
+
+
+def _render_pdf_export(result):
+    """Generate PDF on button click; show download when ready."""
+    st.markdown('<div class="section-title">Export</div>', unsafe_allow_html=True)
+    col_gen, col_dl = st.columns([1, 1])
+
+    with col_gen:
+        if st.button("Generate PDF report", key="btn_generate_pdf", width="stretch"):
+            if not result.validation or not result.validation.valid:
+                st.error("Fix validation issues before generating a report.")
+            else:
+                with st.spinner("Building PDF report..."):
+                    path = build_pdf_report(result)
+                if path:
+                    st.session_state["pdf_report_path"] = str(path)
+                    st.success("Report ready to download.")
+                else:
+                    st.error("Could not generate report.")
+
+    pdf_path = st.session_state.get("pdf_report_path")
+    with col_dl:
+        if pdf_path and Path(pdf_path).is_file():
+            with open(pdf_path, "rb") as f:
+                st.download_button(
+                    "Download PDF report",
+                    f,
+                    file_name=Path(pdf_path).name,
+                    mime="application/pdf",
+                    width="stretch",
+                    key="btn_download_pdf",
+                )
+        else:
+            st.caption("Generate a report first, then download it here.")
 
 
 def main():
@@ -224,7 +261,8 @@ def main():
         _render_upload_panel(shoebox_path)
 
         st.divider()
-        st.caption("Receipts use Gemini vision (handles rotation & handwriting).")
+        st.caption("Use **💬 Ask LedgerLens** (bottom-right) for questions about your data.")
+        st.caption("Receipts parsed via your configured OCR provider.")
 
     if not shoebox_path.exists():
         st.error("Data folder not found.")
@@ -257,6 +295,8 @@ def main():
         st.warning("No analytics available.")
         return
 
+    render_floating_chat(result)
+
     _render_hero(analytics)
     _render_kpis(analytics, len(result.transactions))
 
@@ -264,13 +304,17 @@ def main():
     with left:
         st.plotly_chart(cash_flow_bar(analytics.monthly), width="stretch")
     with right:
-        st.plotly_chart(category_donut(analytics.by_category), width="stretch")
+        st.plotly_chart(by_source_chart(analytics.by_source), width="stretch")
 
     mid_l, mid_r = st.columns(2)
     with mid_l:
-        st.plotly_chart(top_merchants_bar(analytics.top_merchants), width="stretch")
+        st.plotly_chart(card_spend_bar(analytics.monthly_card_spend), width="stretch")
     with mid_r:
-        st.plotly_chart(payment_methods_chart(analytics.payment_methods), width="stretch")
+        st.plotly_chart(invoice_status_chart(analytics.invoice_status), width="stretch")
+
+    st.plotly_chart(top_merchants_bar(analytics.top_merchants), width="stretch")
+    if not analytics.top_revenue_clients.empty:
+        st.plotly_chart(revenue_clients_bar(analytics.top_revenue_clients), width="stretch")
 
     st.markdown('<div class="section-title">Receipt gallery</div>', unsafe_allow_html=True)
     receipts = result.parsed.get("receipts", pd.DataFrame())
@@ -292,18 +336,7 @@ def main():
                 unsafe_allow_html=True,
             )
 
-    if result.report_path and result.report_path.exists():
-        st.divider()
-        _, col_b = st.columns([3, 1])
-        with col_b:
-            with open(result.report_path, "rb") as f:
-                st.download_button(
-                    "Download PDF report",
-                    f,
-                    file_name=result.report_path.name,
-                    mime="application/pdf",
-                    width="stretch",
-                )
+    _render_pdf_export(result)
 
 
 if __name__ == "__main__":

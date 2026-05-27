@@ -1,188 +1,180 @@
 from __future__ import annotations
-
-import json
+ 
 import os
-import re
-import time
 from pathlib import Path
-from typing import List, Optional
-
+ 
 import pandas as pd
-from dotenv import load_dotenv
-from google import genai
-from google.genai import types
-from PIL import Image, ImageOps
-from pydantic import BaseModel, Field
-
-load_dotenv()
-
+from mindee import ClientV2, InferenceParameters, InferenceResponse, PathInput
+ 
+ 
 # ---------------------------------------------------------------------------
-# 1. Response Schemas (Guarantees JSON Structure)
+# Config — read from environment variables
 # ---------------------------------------------------------------------------
-
-class LineItem(BaseModel):
-    description: str = Field(description="The name or description of the product or service.")
-    quantity: Optional[int] = Field(None, description="The number of items purchased.")
-    unit_price: Optional[float] = Field(None, description="The price per single item.")
-
-class ReceiptSchema(BaseModel):
-    is_receipt: bool = Field(
-        description="True if the image is a valid transaction receipt, invoice, bill, parking stub, or handwritten sales note. False if it is a photo of a dog, landscape, or completely unrelated object."
-    )
-    merchant: Optional[str] = Field(None, description="The company or store name (e.g., 'Bureau en Gros', 'Jean Coutu'). Use the most prominent header text if unclear. Do not use addresses.")
-    date: Optional[str] = Field(None, description="The transaction date normalized strictly to ISO format: YYYY-MM-DD.")
-    amount: Optional[float] = Field(None, description="The absolute final grand total paid by the customer (after all taxes, item deductions, and tips).")
-    subtotal: Optional[float] = Field(None, description="The total cost of items BEFORE taxes and fees are added.")
-    tax: Optional[float] = Field(None, description="The combined total of all taxes applied (e.g., sum up TPS and TVQ for Quebec receipts).")
-    tip: Optional[float] = Field(None, description="Any added tip or gratuity amount.")
-    currency: Optional[str] = Field("CAD", description="3-letter ISO currency code. Infer from address or symbols (e.g., CAD, USD, EUR).")
-    line_items: List[LineItem] = Field(default=[], description="List of individual items purchased.")
-    payment_method: Optional[str] = Field(None, description="The payment type used (e.g., 'cash', 'debit', 'credit', 'e-transfer').")
-    confidence: str = Field(description="Set to 'high', 'medium', or 'low' based on how legible the image text is.")
-    notes: Optional[str] = Field(None, description="Brief extraction notes, such as unreadable handwriting or language issues.")
-
-
+ 
+def _require_env(name: str) -> str:
+    value = os.environ.get(name)
+    if not value:
+        raise EnvironmentError(
+            f"{name} is not set.\n"
+            "See the setup instructions at the top of this file."
+        )
+    return value
+ 
+ 
 # ---------------------------------------------------------------------------
-# 2. Client Initialization
+# Field extraction helpers
 # ---------------------------------------------------------------------------
-
-def _get_client() -> genai.Client:
-    # Explicitly isolate the correct AI Studio key
-    api_key = os.environ.get("GEMINI_API_KEY")
-    if not api_key:
-        raise EnvironmentError("GEMINI_API_KEY is not set.")
-        
-    os.environ.pop("GOOGLE_API_KEY", None)
-    
-    return genai.Client(api_key=api_key)
-
-
-_MODEL = "gemini-2.0-flash" 
-
-
+ 
+def _str(fields: dict, key: str) -> str | None:
+    """Safely get a simple string field value."""
+    try:
+        return fields[key].value
+    except (KeyError, AttributeError):
+        return None
+ 
+ 
+def _float(fields: dict, key: str) -> float | None:
+    """Safely get a simple numeric field value."""
+    try:
+        val = fields[key].value
+        return float(val) if val is not None else None
+    except (KeyError, AttributeError, TypeError, ValueError):
+        return None
+ 
+ 
+def _locale_currency(fields: dict) -> str:
+    """Extract currency from the nested locale field, default to CAD."""
+    try:
+        subfields = fields["locale"].value  # ObjectField
+        return subfields.get("currency") or "CAD"
+    except (KeyError, AttributeError, TypeError):
+        return "CAD"
+ 
+ 
+def _taxes(fields: dict) -> float | None:
+    """Sum all individual tax amounts into a single total tax figure."""
+    try:
+        tax_list = fields["taxes"].value  # ListField of ObjectFields
+        if not tax_list:
+            return None
+        total = sum(
+            float(t.get("amount") or 0)
+            for t in tax_list
+            if t.get("amount") is not None
+        )
+        return round(total, 2) if total else None
+    except (KeyError, AttributeError, TypeError):
+        return None
+ 
+ 
+def _line_items(fields: dict) -> list[dict]:
+    """Extract line items as a list of plain dicts."""
+    try:
+        items = fields["line_items"].value  # ListField
+        if not items:
+            return []
+        return [
+            {
+                "description": item.get("description"),
+                "quantity": item.get("quantity"),
+                "unit_price": item.get("unit_price"),
+                "total_price": item.get("total_price"),
+            }
+            for item in items
+        ]
+    except (KeyError, AttributeError, TypeError):
+        return []
+ 
+ 
+def _payment_method(fields: dict) -> str | None:
+    """Mindee doesn't have a dedicated payment_method field; derive from notes."""
+    # Financial Document model doesn't extract payment method directly.
+    # We leave it None — extend here if you add a custom field in Mindee's schema.
+    return None
+ 
+ 
 # ---------------------------------------------------------------------------
-# 3. Upgraded Image Loader (Fixes Sideways Mobile Photos)
+# Core parsing
 # ---------------------------------------------------------------------------
-
-_MAX_DIMENSION = 1568  
-
-def _load_image(image_path: Path) -> Image.Image:
-    """Load image, automatically fix EXIF orientation, resize if oversized, convert to RGB."""
-    with Image.open(image_path) as img:
-        img.load()  
-
-    # CRITICAL: This transposes the image pixels based on the camera's original orientation
-    img = ImageOps.exif_transpose(img)
-
-    if img.mode not in ("RGB", "L"):
-        img = img.convert("RGB")
-
-    w, h = img.size
-    if max(w, h) > _MAX_DIMENSION:
-        scale = _MAX_DIMENSION / max(w, h)
-        img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
-
-    return img
-
-
-# ---------------------------------------------------------------------------
-# 4. Optimized Prompt
-# ---------------------------------------------------------------------------
-
-_PROMPT = """You are an advanced multilingual financial OCR vision engine.
-
-Analyze the provided image carefully to determine if it is a transaction record, and then extract the data to match the required JSON schema.
-
-SPECIAL INSTRUCTIONS:
-1. VALIDITY CHECK: First verify if the image is a valid transaction record (receipt, invoice, hand-written note, bill). If it's an image of a dog, animal, or random non-receipt object, immediately set `is_receipt` to false and leave financial fields null.
-2. MULTILINGUAL & HANDWRITTEN CONTEXT: Receipts may contain handwritten text or be entirely in French (e.g., look for 'Sous-total', 'TPS', 'TVQ', 'Comptant', 'Stationnement'). 
-3. CRITICAL TOTAL VALUE: Look for the ultimate final bottom-line amount paid. Do not mistake the 'Subtotal' or cash 'Tendered/Comptant' values for the final amount.
-4. DATE NORMALIZATION: Convert dates to ISO standard YYYY-MM-DD. Be aware of standard Canadian/Quebec formatting variants (e.g., DD/MM/YYYY vs MM/DD/YYYY).
-"""
-
-
-# ---------------------------------------------------------------------------
-# 5. Core Parsing Execution
-# ---------------------------------------------------------------------------
-
+ 
 def parse_receipt(image_path: Path) -> dict:
     """
-    Parse a single receipt image using Gemini structured generation.
-    Returns a normalized dictionary.
+    Parse a single receipt/invoice image using the Mindee Financial Document API.
+    Returns a flat dict matching your required schema.
     """
     image_path = Path(image_path)
-
+ 
+    api_key = _require_env("MINDEE_API_KEY")
+    model_id = _require_env("MINDEE_MODEL_ID")
+ 
+    client = ClientV2(api_key)
+ 
+    params = InferenceParameters(
+        model_id=model_id,
+        rag=None,        # enable RAG for better accuracy on complex docs (costs more quota)
+        confidence=True, # include confidence scores
+        polygon=False,
+        raw_text=False,
+    )
+ 
     try:
-        img = _load_image(image_path)
-    except Exception as exc:
-        return _error_record(image_path, f"Image load failed: {exc}")
-
-    client = _get_client()
-
-    # Wrapped generation request with structural enforcement
-    def _call_api():
-        return client.models.generate_content(
-            model=_MODEL,
-            contents=[_PROMPT, img],
-            config=types.GenerateContentConfig(
-                temperature=0.0,  # Zero out creativity for strict OCR extraction
-                response_mime_type="application/json",
-                response_schema=ReceiptSchema,  # Forces Gemini to output matching structural fields
-            ),
+        input_source = PathInput(str(image_path))
+        response: InferenceResponse = client.enqueue_and_get_result(
+            InferenceResponse,
+            input_source,
+            params,
         )
-
-    try:
-        response = _call_api()
     except Exception as exc:
-        # Gracefully catch API/Quota limits (429), wait, and retry once
-        if "429" in str(exc) or "quota" in str(exc).lower():
-            print(f"Quota hit for {image_path.name}. Sleeping for 2s...")
-            time.sleep(2)
-            try:
-                response = _call_api()
-            except Exception as exc2:
-                return _error_record(image_path, f"API error after retry: {exc2}")
-        else:
-            return _error_record(image_path, f"API error: {exc}")
-
-    raw_text = response.text.strip() if response.text else ""
-
+        return _error_record(image_path, str(exc))
+ 
     try:
-        # Structured output means Gemini returns guaranteed raw JSON string — no regex parsing needed
-        parsed = json.loads(raw_text)
-    except json.JSONDecodeError:
-        return _error_record(image_path, f"JSON parse failed. Raw text output: {raw_text[:300]}")
-
-    # Build consistent output format matching your original pipeline
+        fields: dict = response.inference.result.fields
+    except AttributeError as exc:
+        return _error_record(image_path, f"Unexpected response shape: {exc}")
+ 
+    amount   = _float(fields, "total_amount")
+    subtotal = _float(fields, "total_net")
+    tax      = _taxes(fields)
+    date_raw = _str(fields, "date")
+    merchant = _str(fields, "supplier_name")
+    doc_type = _str(fields, "document_type")  # "receipt", "invoice", etc.
+ 
     return {
         "source": "receipt",
         "source_file": image_path.name,
-        "is_valid_receipt": parsed.get("is_receipt", False),
-        "merchant_raw": parsed.get("merchant"),
-        "amount": parsed.get("amount"),
-        "subtotal": parsed.get("subtotal"),
-        "tax": parsed.get("tax"),
-        "tip": parsed.get("tip"),
-        "currency": parsed.get("currency", "CAD"),
-        "date_raw": parsed.get("date"),
-        "payment_method": parsed.get("payment_method"),
-        "line_items": parsed.get("line_items", []),
-        "confidence": parsed.get("confidence", "low"),
-        "notes": parsed.get("notes"),
-        "ocr_mode": f"gemini-vision-structured ({_MODEL})",
+        "is_valid_receipt": doc_type in ("receipt", "invoice", None),  # None = model uncertain but parsed
+        "merchant_raw": merchant,
+        "amount": amount,
+        "subtotal": subtotal,
+        "tax": tax,
+        "tip": None,  # not a Mindee field
+        "currency": _locale_currency(fields),
+        "date_raw": date_raw,
+        "payment_method": _payment_method(fields),
+        "line_items": _line_items(fields),
+        "confidence": "high" if amount is not None else "low",
+        "notes": f"document_type={doc_type}",
+        "ocr_mode": f"mindee-financial-document ({model_id})",
     }
-
-
+ 
+ 
 def parse_receipts(receipt_paths: list[Path]) -> pd.DataFrame:
-    """Parse a batch of receipt images and compile them into a pandas DataFrame."""
+    """Parse multiple receipt images; returns a tidy DataFrame."""
     if not receipt_paths:
-        return pd.DataFrame()
+        return pd.DataFrame(columns=[
+            "source", "source_file", "is_valid_receipt", "merchant_raw",
+            "amount", "subtotal", "tax", "tip", "currency", "date_raw",
+            "payment_method", "line_items", "confidence", "notes", "ocr_mode",
+        ])
     rows = [parse_receipt(p) for p in receipt_paths]
     return pd.DataFrame(rows)
-
-
+ 
+ 
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+ 
 def _error_record(image_path: Path, message: str) -> dict:
-    """Fallback standard record format for ingestion failures."""
     return {
         "source": "receipt",
         "source_file": image_path.name,
@@ -192,7 +184,7 @@ def _error_record(image_path: Path, message: str) -> dict:
         "subtotal": None,
         "tax": None,
         "tip": None,
-        "currency": None,
+        "currency": "CAD",
         "date_raw": None,
         "payment_method": None,
         "line_items": [],

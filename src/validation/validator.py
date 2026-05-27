@@ -9,7 +9,6 @@ class TransactionRecord(BaseModel):
     merchant: str = ""
     amount: float | None = None
     date: str | None = None
-    category: str = "Uncategorized"
     currency: str = "CAD"
 
 
@@ -33,7 +32,7 @@ def validate(transactions: pd.DataFrame) -> ValidationResult:
     result.row_count = len(transactions)
     display = transactions.copy()
 
-    for col in ("date", "amount", "merchant", "category", "source", "currency"):
+    for col in ("date", "amount", "merchant", "source", "currency"):
         if col not in display.columns:
             display[col] = None
 
@@ -66,7 +65,6 @@ def validate(transactions: pd.DataFrame) -> ValidationResult:
                 merchant=str(row.get("merchant", "")),
                 amount=row.get("amount") if pd.notna(row.get("amount")) else None,
                 date=date_str,
-                category=str(row.get("category", "Uncategorized")),
                 currency=str(row.get("currency", "CAD")),
             )
         except ValidationError as e:

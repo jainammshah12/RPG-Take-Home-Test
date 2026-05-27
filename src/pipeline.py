@@ -6,7 +6,6 @@ import pandas as pd
 from src.analytics.metrics import AnalyticsSummary, compute_analytics
 from src.cleaning.normalizer import combine_sources
 from src.config import SHOEBOX_DIR
-from src.enrichment import enrich
 from src.ingestion.loader import IngestedFiles, ingest
 from src.output.pdf_report import generate_pdf_report
 from src.parsing import parse_all
@@ -28,7 +27,6 @@ def run_pipeline(shoebox_dir: Path | None = None, generate_report: bool = True) 
 
     result.parsed = parse_all(result.ingested)
     result.transactions = combine_sources(result.parsed)
-    result.transactions = enrich(result.transactions, result.parsed)
 
     result.validation = validate(result.transactions)
     result.analytics = compute_analytics(result.transactions, result.parsed)

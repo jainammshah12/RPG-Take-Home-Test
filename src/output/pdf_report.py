@@ -34,8 +34,10 @@ def generate_pdf_report(
         ["Revenue", f"${analytics.revenue:,.2f}"],
         ["Expenses", f"${analytics.expenses:,.2f}"],
         ["Net Cash Flow", f"${analytics.cash_flow:,.2f}"],
+        ["Card Transactions", str(analytics.statement_tx_count)],
+        ["Invoices Paid", f"${analytics.invoice_paid_amount:,.2f}"],
+        ["Invoices Pending", f"${analytics.invoice_pending_amount:,.2f}"],
         ["Receipts Parsed", str(analytics.receipt_count)],
-        ["Receipt Total (extracted)", f"${analytics.receipt_total_spend:,.2f}"],
     ]
     t = Table(summary_data, colWidths=[2.5 * inch, 2 * inch])
     t.setStyle(
@@ -77,13 +79,13 @@ def generate_pdf_report(
     story.append(Paragraph("Recent Transactions", styles["Heading2"]))
 
     display = transactions.head(20).copy()
-    for col in ("date", "merchant", "amount", "category", "source"):
+    for col in ("date", "merchant", "amount", "source"):
         if col not in display.columns:
             display[col] = ""
     display["date"] = display["date"].apply(
         lambda d: pd.Timestamp(d).strftime("%Y-%m-%d") if pd.notna(d) else ""
     )
-    rows = [["Date", "Merchant", "Amount", "Category", "Source"]]
+    rows = [["Date", "Merchant", "Amount", "Source"]]
     for _, r in display.iterrows():
         amt = r.get("amount")
         amt_str = f"${float(amt):,.2f}" if amt is not None and pd.notna(amt) else ""
@@ -92,11 +94,10 @@ def generate_pdf_report(
                 str(r.get("date", "")),
                 str(r.get("merchant", ""))[:30],
                 amt_str,
-                str(r.get("category", "")),
                 str(r.get("source", "")),
             ]
         )
-    tx_table = Table(rows, colWidths=[1 * inch, 2 * inch, 1 * inch, 1.2 * inch, 0.8 * inch])
+    tx_table = Table(rows, colWidths=[1 * inch, 2.2 * inch, 1 * inch, 0.9 * inch])
     tx_table.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), 0.25, colors.grey)]))
     story.append(tx_table)
 
