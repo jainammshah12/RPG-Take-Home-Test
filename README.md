@@ -84,6 +84,9 @@ npm run dev
 Open **http://localhost:5173**
 
 The Vite dev server proxies `/api` to the backend on port 8000.
+You can obtain free APIs from Mindee (process 200 docs) and Groq () using the following guides:
+Groq: https://console.groq.com/docs/quickstart
+Mindee: https://docs.mindee.com/getting-started/quickstart
 
 ## Data Flow
 
@@ -111,17 +114,15 @@ The Vite dev server proxies `/api` to the backend on port 8000.
   - Parses only **new or modified files incrementally**
   - Performs a full analysis only on first load or force refresh
 
+- Receipts are parsed with Mindee API for precise image information extraction, statements use pdfplumber and regex to accurately parse the information, invoices use pandas and column mapping, and the Notes uses Groq because of the ambiguity to obtain accurate information.
+
 - Parsed receipts, statements, invoices, and notes are then passed through the financial pipeline:
 
   ```text
   combine_sources → assign_categories → validate → compute_analytics
   ```
 
-- The backend returns a structured JSON payload containing:
-  - Transactions
-  - Analytics and KPIs
-  - Validation flags
-  - Receipt metadata
+- The backend returns a structured JSON payload containing transactions, analytics and KPIs, validation flags, receipt metadata
 
 - React stores this data in state and renders it across the application:
   - KPI cards and charts
@@ -200,9 +201,10 @@ shoebox/
  
 ## If I Had More Time and GenAI Credits
 
-- **Improved Extraction with LLMs**: Currently, the Mindee API, pdfplumber, pandas and Regex are doing well to parse the information. However, there are a lot of edge cases (especially for notes.txt) where a LLM can eliminate the ambiguity and give the right kind of answers for the existing data.
-- **Improved Chat Feature with RAG**: With extra credits, I would improve the responses in the chat feature using RAG (Retrieval Augmented Generation) to respond with higher accuracy and precision to any possible query asked.
+- **Improved Extraction and Categorization with LLMs**: Currently, the Mindee API, pdfplumber, pandas and Regex are doing well to parse the information. However, there are a lot of edge cases (especially for notes.txt) where a LLM can eliminate the ambiguity and give the right kind of answers for the existing data.
+- **Improved Chat Feature with RAG**: With extra LLM credits and time, I would improve the responses in the chat feature using RAG (Retrieval Augmented Generation) to respond with higher accuracy and precision to any possible query asked.
 - **Persistent Database and Deployment**: With more time, I would expand scope to a lot of users where I can add an SQL persistent database instead of simple caching to process data and also deploy on Docker and Kubernetes to test how API endpoints and features work for a huge number of users.
+- **Security Layer**: With the persistent database, there is a lot of confidential and sensitive financial data which can be stolen by hackers, therefore an algorithm like SHA-256 with salting could make it easier for a lot of users to safely use this application without the fear of financial data being stolen.
 - **Explainability Scores for the Data**: With additional time, I could add metrics such as data quality scores, confidence fields and manual review queues.
 
 ## Images
