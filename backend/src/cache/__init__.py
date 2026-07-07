@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from src.cache.analysis_store import (
     analysis_needs_loading,
     diff_file_index,

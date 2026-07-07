@@ -201,7 +201,7 @@ shoebox/
  
 ## If I Had More Time and GenAI Credits
 
-- **Improved Extraction and Categorization with LLMs**: Currently, the Mindee API, pdfplumber, pandas and Regex are doing well to parse the information. However, there are a lot of edge cases (especially for notes.txt) where a LLM can eliminate the ambiguity and give the right kind of answers for the existing data.
+- **Improved Extraction and Categorization with LLMs**: Currently, the Mindee API, pdfplumber, pandas and Regex are doing well to parse the information. However, there are a lot of edge cases where a LLM can eliminate the ambiguity and give the right kind of answers for the existing data.
 - **Improved Chat Feature with RAG**: With extra LLM credits and time, I would improve the responses in the chat feature using RAG (Retrieval Augmented Generation) to respond with higher accuracy and precision to any possible query asked.
 - **Persistent Database and Deployment**: With more time, I would expand scope to a lot of users where I can add an SQL persistent database instead of simple caching to process data and also deploy on Docker and Kubernetes to test how API endpoints and features work for a huge number of users.
 - **Security Layer**: With the persistent database, there is a lot of confidential and sensitive financial data which can be stolen by hackers, therefore an algorithm like SHA-256 with salting could make it easier for a lot of users to safely use this application without the fear of financial data being stolen.

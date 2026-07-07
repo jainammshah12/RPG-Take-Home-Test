@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """On-demand export helpers."""
 
 from pathlib import Path

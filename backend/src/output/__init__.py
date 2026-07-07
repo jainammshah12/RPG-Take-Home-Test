@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from src.output.pdf_report import generate_pdf_report
 
 __all__ = ["generate_pdf_report"]
