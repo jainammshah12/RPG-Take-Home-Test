@@ -7,7 +7,7 @@ describe("api client", () => {
   });
 
   it("fetchHealth calls /api/health", async () => {
-    const mock = vi.spyOn(global, "fetch").mockResolvedValue(
+    const mock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify({ status: "ok" }), { status: 200 })
     );
     const data = await fetchHealth();
@@ -16,7 +16,7 @@ describe("api client", () => {
   });
 
   it("fetchConfig returns default shoebox", async () => {
-    vi.spyOn(global, "fetch").mockResolvedValue(
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify({ default_shoebox: "/data/shoebox" }), { status: 200 })
     );
     const data = await fetchConfig();
@@ -24,7 +24,7 @@ describe("api client", () => {
   });
 
   it("fetchAnalysis throws on error response", async () => {
-    vi.spyOn(global, "fetch").mockResolvedValue(
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify({ detail: "Service unavailable" }), { status: 503 })
     );
     await expect(fetchAnalysis("/data/shoebox")).rejects.toThrow("Service unavailable");
